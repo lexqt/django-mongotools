@@ -11,6 +11,8 @@ from mongoengine import ReferenceField as MongoReferenceField
 from mongoengine.fields import (
     IntField, SequenceField)
 
+from .widgets import ClearableGridFSFileInput
+
 BLANK_CHOICE_DASH = [("", "---------")]
 
 class MongoChoiceIterator(object):
@@ -391,6 +393,7 @@ class MongoFormFieldGenerator(object):
             'label': self.get_field_label(field),
             'initial': field.default,
             'help_text': self.get_field_help_text(field),
+            'widget': ClearableGridFSFileInput,
         }
         defaults.update(kwargs)
         return forms.FileField(**defaults)

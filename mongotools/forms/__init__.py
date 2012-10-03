@@ -118,7 +118,9 @@ class MongoForm(forms.BaseForm):
             if isinstance(self.instance._fields[field_name], FileField):
                 io = self.cleaned_data.get(field_name)
 
-                if isinstance(io, UploadedFile):
+                if io is False:
+                    self.instance[field_name].delete()
+                elif isinstance(io, UploadedFile):
                     save_file(self.instance[field_name], io)
 
                 continue
