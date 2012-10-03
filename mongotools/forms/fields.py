@@ -389,6 +389,7 @@ class MongoFormFieldGenerator(object):
         defaults = {
             'required': field.required,
             'label': self.get_field_label(field),
+            'initial': field.default,
             'help_text': self.get_field_help_text(field),
         }
         defaults.update(kwargs)

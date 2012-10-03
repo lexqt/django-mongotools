@@ -119,8 +119,7 @@ class MongoForm(forms.BaseForm):
                 io = self.cleaned_data.get(field_name)
 
                 if isinstance(io, UploadedFile):
-                    field = save_file(self.instance, field_name, io)
-                    setattr(self.instance, field_name, field)
+                    save_file(self.instance[field_name], io)
 
                 continue
 

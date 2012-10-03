@@ -5,7 +5,6 @@ import gridfs
 from django import forms
 from mongoengine.base import ValidationError
 from mongoengine.fields import EmbeddedDocumentField, ListField, ReferenceField
-from mongoengine.connection import _get_db
 
 from fields import MongoFormFieldGenerator
 
@@ -62,8 +61,7 @@ def iter_valid_fields(meta):
 
         yield (field_name, field)
 
-def _get_unique_filename(name):
-    fs = gridfs.GridFS(_get_db())
+def _get_unique_filename(fs, name):
     file_root, file_ext = os.path.splitext(name)
     count = itertools.count(1)
     while fs.exists(filename=name):
@@ -71,11 +69,9 @@ def _get_unique_filename(name):
         name = os.path.join("%s_%s%s" % (file_root, count.next(), file_ext))
     return name
 
-def save_file(instance, field_name, file):
-    field = getattr(instance, field_name)
-    
-    filename = _get_unique_filename(file.name)
+def save_file(proxy, file):
+    filename = _get_unique_filename(proxy.fs, file.name)
     file.file.seek(0)
     
-    field.replace(file, content_type=file.content_type, filename=filename)
-    return field
+    proxy.replace(file, content_type=file.content_type, filename=filename)
+    return proxy
