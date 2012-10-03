@@ -117,7 +117,7 @@ class MongoMultipleObjectMixin(MultipleObjectMixin):
 
 class MongoSingleObjectTemplateResponseMixin(TemplateResponseMixin):
     template_name_field = None
-    template_name_suffix = '_detail'
+    template_name_suffix = 'detail'
 
     def get_template_names(self):
         """
@@ -274,7 +274,7 @@ class MongoMultipleObjectTemplateResponseMixin(TemplateResponseMixin):
         a list. May not be called if get_template is overridden.
         """
         try:
-            names = TemplateResponseMixin.get_template_names(self)
+            names = super(MongoMultipleObjectTemplateResponseMixin, self).get_template_names()
         except ImproperlyConfigured:
             names = []
 

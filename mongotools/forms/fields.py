@@ -1,5 +1,4 @@
 from django import forms
-from django.utils.encoding import smart_unicode
 from pymongo.errors import InvalidId
 from bson import ObjectId
 from django.core.validators import EMPTY_VALUES
@@ -45,9 +44,9 @@ class ReferenceField(forms.TypedChoiceField):
     Reference field for mongo forms. Inspired by `django.forms.models.ModelChoiceField`.
     """
     def __init__(self, queryset, empty_label=u"---------",
-                 *aargs, **kwaargs):
+                 *args, **kwargs):
         
-        super(ReferenceField, self).__init__(*aargs, **kwaargs)
+        super(ReferenceField, self).__init__(*args, **kwargs)
         self.queryset = queryset
         self.empty_label = empty_label
         
