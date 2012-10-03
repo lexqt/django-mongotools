@@ -156,11 +156,8 @@ class MongoSingleObjectTemplateResponseMixin(TemplateResponseMixin):
 
 class MongoFormMixin(FormMixin, MongoSingleObjectMixin):
     """
-    A mixin that provides a way to show and handle a mongo in a request.
+    A mixin that provides a way to show and handle a mongoform in a request.
     """
-    success_message = None
-    historic_action = None
-    save_permission = None
 
     def get_form_class(self):
         """
@@ -188,28 +185,11 @@ class MongoFormMixin(FormMixin, MongoSingleObjectMixin):
             except AttributeError:
                 raise ImproperlyConfigured(
                     "No URL to redirect to.  Either provide a url or define"
-                    " a get_absolute_url method on the Model.")
+                    " a get_absolute_url method on the Document.")
         return url
 
-    def send_messages(self):
-        if self.success_message:
-            messages.success(self.request,
-                             self.success_message % self.object)
-
-    def write_historic(self):
-        if self.historic_action:
-            self.request.user.register_historic(self.object,
-                                                self.historic_action)
-
     def form_valid(self, form):
-        if self.save_permission:
-            if not self.request.user.has_perm(self.save_permission):
-                return render(self.request, 'access_denied.html', locals())
         self.object = form.save()
-
-        self.write_historic()
-        self.send_messages()
-
         return super(MongoFormMixin, self).form_valid(form)
 
     def get_context_data(self, **kwargs):
