@@ -218,6 +218,7 @@ class MongoFormFieldGenerator(object):
             defaults['widget'] = forms.Textarea
 
         if field.regex:
+            form_class = forms.RegexField
             defaults['regex'] = field.regex
         elif field.choices:
             form_class = forms.TypedChoiceField
