@@ -215,6 +215,9 @@ class MongoFormMixin(FormMixin, MongoSingleObjectMixin):
         context = kwargs
         if self.object:
             context['object'] = self.object
+            context_object_name = self.get_context_object_name(self.object)
+            if context_object_name:
+                context[context_object_name] = self.object
         return context
         
 class BaseDetailView(MongoSingleObjectMixin, View):
