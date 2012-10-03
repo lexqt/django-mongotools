@@ -23,6 +23,7 @@
 from django.views.generic.detail import SingleObjectMixin, BaseDetailView
 from django.views.generic.edit import FormMixin, ProcessFormView, DeletionMixin
 from django.core.exceptions import ImproperlyConfigured, ObjectDoesNotExist
+from django.utils.encoding import smart_str
 from django.views.generic.base import TemplateResponseMixin, View
 from django.http import HttpResponseRedirect, Http404
 from django.views.generic.list import MultipleObjectMixin
@@ -220,18 +221,8 @@ class MongoFormMixin(FormMixin, MongoSingleObjectMixin):
                 context[context_object_name] = self.object
         return context
         
-class BaseDetailView(MongoSingleObjectMixin, View):
-    historic_view_action = None
-    def get(self, request, **kwargs):
-        self.object = self.get_object()
-        context = self.get_context_data(object=self.object)
-
-        if self.historic_view_action:
-            self.request.user.register_historic(
-                self.object,
-                self.historic_view_action)
-
-        return self.render_to_response(context)
+class BaseDetailView(MongoSingleObjectMixin, BaseDetailView, View):
+    pass
 
 class BaseCreateView(MongoFormMixin, ProcessFormView):
     """
@@ -355,9 +346,12 @@ class MongoMultipleObjectTemplateResponseMixin(TemplateResponseMixin):
         return names
 
 class DetailView(MongoSingleObjectTemplateResponseMixin, BaseDetailView):
-    template_name_suffix = 'detail'
-    def get_context_data(self, **kwargs):
-        return kwargs
+    """
+    Render a "detail" view of an object.
+
+    By default this is a model instance looked up from `self.queryset`, but the
+    view will support display of *any* object by overriding `self.get_object()`.
+    """
 
 class ListView(MongoMultipleObjectTemplateResponseMixin, BaseListView):
     """
