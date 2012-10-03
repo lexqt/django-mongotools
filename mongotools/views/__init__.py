@@ -269,40 +269,6 @@ class UpdateView(MongoSingleObjectTemplateResponseMixin, BaseUpdateView):
     template_name_suffix = 'form'
 
 
-class DeletionMixin(object):
-    """
-    A mixin providing the ability to delete objects
-    """
-    success_url = None
-    success_message = None
-    historic_action = None
-
-    def delete(self, request, *args, **kwargs):
-        self.object = self.get_object()
-        msg = None
-
-        if self.success_message:
-            msg = self.success_message % self.object
-
-        if self.historic_action:
-            self.request.user.register_historic(self.object,
-                                                self.historic_action)
-
-        self.object.delete()
-        return HttpResponseRedirect(self.get_success_url())
-
-    # Add support for browsers which only accept GET and POST for now.
-    def post(self, *args, **kwargs):
-        return self.delete(*args, **kwargs)
-
-    def get_success_url(self):
-        if self.success_url:
-            return self.success_url
-        else:
-            raise ImproperlyConfigured(
-                "No URL to redirect to. Provide a success_url.")
-
-
 class BaseDeleteView(DeletionMixin, BaseDetailView):
     """
     Base view for deleting an object.
