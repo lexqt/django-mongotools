@@ -20,7 +20,7 @@
 # This file is based in Django Class Views
 # adapted for use of mongoengine
 
-from django.views.generic.detail import BaseDetailView
+from django.views.generic.detail import SingleObjectMixin, BaseDetailView
 from django.views.generic.edit import FormMixin, ProcessFormView, DeletionMixin
 from django.core.exceptions import ImproperlyConfigured, ObjectDoesNotExist
 from django.views.generic.base import TemplateResponseMixin, View
@@ -29,13 +29,11 @@ from django.views.generic.list import MultipleObjectMixin
 from django.shortcuts import render
 from django.contrib import messages
 
-class MongoSingleObjectMixin(object):
+class MongoSingleObjectMixin(SingleObjectMixin):
     """
     Provides the ability to retrieve a single object for further manipulation.
     """
     document = None
-    queryset = None
-    context_object_name = None
 
     def get_object(self, queryset=None):
         """
@@ -47,13 +45,18 @@ class MongoSingleObjectMixin(object):
         if queryset is None:
             queryset = self.get_queryset()
 
-        pk = self.kwargs.get('pk', None)
+        pk = self.kwargs.get(self.pk_url_kwarg, None)
+        slug = self.kwargs.get(self.slug_url_kwarg, None)
         if pk is not None:
             queryset = queryset.filter(pk=pk)
 
+        elif slug is not None:
+            slug_field = self.get_slug_field()
+            queryset = queryset.filter(**{slug_field: slug})
+
         else:
-            raise AttributeError(u"Generic detail view %s must be"
-                                 u" called with object pk."
+            raise AttributeError(u"Generic detail view %s must be called with "
+                                 u"either an object pk or a slug."
                                  % self.__class__.__name__)
 
         try:
@@ -79,8 +82,17 @@ class MongoSingleObjectMixin(object):
                                         })
         return self.queryset.clone()
 
-    def get_context_data(self, **kwargs):
-        return kwargs
+    def get_context_object_name(self, obj):
+        """
+        Get the name to use for the object.
+        """
+        if self.context_object_name:
+            return self.context_object_name
+        elif hasattr(obj, '_meta'):
+            return smart_str(obj.__class__.__name__.lower())
+        else:
+            return None
+
         
 class MongoMultipleObjectMixin(MultipleObjectMixin):
 
