@@ -26,7 +26,7 @@ from django.core.exceptions import ImproperlyConfigured, ObjectDoesNotExist
 from django.utils.encoding import smart_str
 from django.views.generic.base import TemplateResponseMixin, View
 from django.http import HttpResponseRedirect, Http404
-from django.views.generic.list import MultipleObjectMixin
+from django.views.generic.list import MultipleObjectMixin, BaseListView
 from django.shortcuts import render
 from django.contrib import messages
 
@@ -282,15 +282,8 @@ class DeleteView(MongoSingleObjectTemplateResponseMixin, BaseDeleteView):
     """
     template_name_suffix = 'confirm_delete'
     
-class BaseListView(MongoMultipleObjectMixin, View):
-    def get(self, request, *args, **kwargs):
-        self.object_list = self.get_queryset()
-        allow_empty = self.get_allow_empty()
-        if not allow_empty and len(self.object_list) == 0:
-            raise Http404(_(u"Empty list and '%(class_name)s.allow_empty' is False.")
-                          % {'class_name': self.__class__.__name__})
-        context = self.get_context_data(object_list=self.object_list)
-        return self.render_to_response(context)
+class BaseListView(MongoMultipleObjectMixin, BaseListView, View):
+    pass
 
 class MongoMultipleObjectTemplateResponseMixin(TemplateResponseMixin):
     template_name_suffix = 'list'
