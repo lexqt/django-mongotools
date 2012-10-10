@@ -33,34 +33,6 @@ def mongoengine_validate_wrapper(field, old_clean, new_clean):
             raise forms.ValidationError(e)
     return inner_validate
 
-def iter_valid_fields(meta):
-    """walk through the available valid fields.."""
-
-    # fetch field configuration and always add the id_field as exclude
-    meta_fields = getattr(meta, 'fields', ())
-    meta_exclude = getattr(meta, 'exclude', ())
-
-    if hasattr(meta.document, '_meta'):
-        meta_exclude += (meta.document._meta.get('id_field'),)
-    # walk through the document fields
-
-    for field_name, field in sorted(meta.document._fields.items(), key=lambda t: t[1].creation_counter):
-        # skip excluded or not explicit included fields
-        if (meta_fields and field_name not in meta_fields) or field_name in meta_exclude:
-            continue
-
-        if isinstance(field, EmbeddedDocumentField): #skip EmbeddedDocumentField
-            continue
-
-        if isinstance(field, ListField):
-            if hasattr(field.field, 'choices') and not isinstance(field.field, ReferenceField):
-                if not field.field.choices:
-                    continue
-            elif not isinstance(field.field, ReferenceField):
-                continue
-
-        yield (field_name, field)
-
 def _get_unique_filename(fs, name):
     file_root, file_ext = os.path.splitext(name)
     count = itertools.count(1)

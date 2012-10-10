@@ -1,133 +1,239 @@
 import types
+from django.core.exceptions import FieldError
 from django import forms
+from django.forms.forms import get_declared_fields
+from django.forms.util import ErrorList
+from django.forms.widgets import media_property
 from django.core.files.uploadedfile import UploadedFile
 from django.utils.datastructures import SortedDict
 from mongoengine.base import BaseDocument
 from mongotools.forms.fields import MongoFormFieldGenerator
-from mongotools.forms.utils import mongoengine_validate_wrapper, iter_valid_fields, save_file
+from mongotools.forms.utils import mongoengine_validate_wrapper, save_file
 from mongoengine.fields import ReferenceField, FileField, ListField
 
 __all__ = ('MongoForm',)
 
+
+
+def update_instance(form, instance, fields=None, exclude=None):
+    """
+    Updates and returns a document instance from the bound
+    ``form``'s ``cleaned_data``, but does not save the instance
+    to the database.
+    """
+    cleaned_data = form.cleaned_data
+    file_field_list = []
+    for field_name, f in instance._fields.items():
+        if not field_name in cleaned_data:
+            continue
+        if fields is not None and field_name not in fields:
+            continue
+        if exclude and field_name in exclude:
+            continue
+        if isinstance(f, FileField):
+            file_field_list.append(f)
+        else:
+            instance[field_name] = cleaned_data[field_name]
+
+    # TODO: should anything done with files before saving form?
+
+    return instance
+
+def save_instance(form, instance, fields=None, exclude=None, commit=True):
+    """
+    Saves bound Form ``form``'s cleaned_data into document instance ``instance``.
+
+    If commit=True, then the changes to ``instance`` will be saved to the
+    database. Returns ``instance``.
+    """
+    if form.errors:
+        raise ValueError("The `%s` could not be saved because the data didn't"
+                         " validate." % (instance,))
+
+    for field_name, f in instance._fields.items():
+        if fields is not None and field_name not in fields:
+            continue
+        if exclude and field_name in exclude:
+            continue
+        if isinstance(f, FileField):
+            io = form.cleaned_data.get(field_name)
+
+            # FIXME: should it be saved/deleted only if commit is True?
+            if io is False:
+                instance[field_name].delete()
+            elif isinstance(io, UploadedFile):
+                save_file(instance[field_name], io)
+
+            continue
+
+    if commit:
+        instance.save()
+    return instance
+
+def document_to_dict(instance, fields=None, exclude=None):
+    """
+    Returns a dict containing the data in ``instance`` suitable for passing as
+    a Form's ``initial`` keyword argument.
+
+    ``fields`` is an optional list of field names. If provided, only the named
+    fields will be included in the returned dict.
+
+    ``exclude`` is an optional list of field names. If provided, the named
+    fields will be excluded from the returned dict, even if they are listed in
+    the ``fields`` argument.
+    """
+    data = {}
+    for field_name, f in instance._fields.items():
+        if fields and not field_name in fields:
+            continue
+        if exclude and field_name in exclude:
+            continue
+        if isinstance(f, ReferenceField) and instance[field_name]:
+            data[field_name] = unicode(instance[field_name].id)
+        else:
+            data[field_name] = instance[field_name]
+    return data
+
+def fields_for_document(document, fields=None, exclude=None, widgets=None, formfield_generator=None):
+    """
+    Returns a ``SortedDict`` containing form fields for the given document.
+
+    ``fields`` is an optional list of field names. If provided, only the named
+    fields will be included in the returned fields.
+
+    ``exclude`` is an optional list of field names. If provided, the named
+    fields will be excluded from the returned fields, even if they are listed
+    in the ``fields`` argument.
+    """
+    # see django.forms.forms.fields_for_model
+    field_list = []
+    ignored = []
+    if hasattr(document, '_meta'):
+        id_field = document._meta.get('id_field')
+        if id_field not in fields:
+            if exclude:
+                exclude += (id_field,)
+            else:
+                exclude = [id_field]
+    doc_fields = document._fields
+    for field_name, f in sorted(doc_fields.items(), key=lambda t: t[1].creation_counter):
+        if fields is not None and not field_name in fields:
+            continue
+        if exclude and field_name in exclude:
+            continue
+        if widgets and field_name in widgets:
+            kwargs = {'widget': widgets[field_name]}
+        else:
+            kwargs = {}
+
+        if not hasattr(formfield_generator, 'generate'):
+            raise TypeError('formfield_generator must be an object with "generate" method')
+        else:
+            formfield = formfield_generator.generate(f, **kwargs)
+
+        if not isinstance(f, FileField):
+            formfield.clean = mongoengine_validate_wrapper(
+                f,
+                formfield.clean, f._validate)
+
+        if formfield:
+            field_list.append((field_name, formfield))
+        else:
+            ignored.append(field_name)
+    field_dict = SortedDict(field_list)
+    if fields:
+        field_dict = SortedDict(
+            [(f, field_dict.get(f)) for f in fields
+                if ((not exclude) or (exclude and f not in exclude)) and (f not in ignored)]
+        )
+    return field_dict
+
+
+
+class MongoFormOptions(object):
+    def __init__(self, options=None):
+        self.document = getattr(options, 'document', None)
+        self.fields = getattr(options, 'fields', None)
+        self.exclude = getattr(options, 'exclude', None)
+        self.widgets = getattr(options, 'widgets', None)
+        self.formfield_generator = getattr(options, 'formfield_generator', MongoFormFieldGenerator())
+
+
 class MongoFormMetaClass(type):
     """Metaclass to create a new MongoForm."""
+    # see django.forms.forms.ModelFormMetaclass
 
     def __new__(cls, name, bases, attrs):
-        # get all valid existing Fields and sort them
-        fields = [(field_name, attrs.pop(field_name)) for field_name, obj in \
-            attrs.items() if isinstance(obj, forms.Field)]
-        fields.sort(lambda x, y: cmp(x[1].creation_counter, y[1].creation_counter))
+        try:
+            parents = [b for b in bases if issubclass(b, MongoForm)]
+        except NameError:
+            # We are defining MongoForm itself.
+            parents = None
+        new_class = super(MongoFormMetaClass, cls).__new__(cls, name, bases,
+                attrs)
+        if not parents:
+            return new_class
 
-        # get all Fields from base classes
-        for base in bases[::-1]:
-            if hasattr(base, 'base_fields'):
-                fields = base.base_fields.items() + fields
+        if 'media' not in attrs:
+            new_class.media = media_property(new_class)
+        opts = new_class._meta = MongoFormOptions(getattr(new_class, 'Meta', None))
+        declared_fields = get_declared_fields(bases, attrs, False)
+        if opts.document:
+            # If a document is defined, extract form fields from it.
+            fields = fields_for_document(opts.document, opts.fields,
+                                      opts.exclude, opts.widgets, opts.formfield_generator)
+            # make sure fields doesn't specify an invalid field
+            none_document_fields = [k for k, v in fields.iteritems() if not v]
+            missing_fields = set(none_document_fields) - \
+                             set(declared_fields.keys())
+            if missing_fields:
+                message = 'Unknown field(s) (%s) specified for %s'
+                message = message % (', '.join(missing_fields),
+                                     opts.document.__name__)
+                raise FieldError(message)
+            # Override default document fields with any custom declared ones
+            # (plus, include all the other declared fields).
+            fields.update(declared_fields)
+        else:
+            fields = declared_fields
+        new_class.declared_fields = declared_fields
+        new_class.base_fields = fields
+        return new_class
 
-        # add the fields as "our" base fields
-        attrs['base_fields'] = SortedDict(fields)
-        
-        # Meta class available?
-        if 'Meta' in attrs and hasattr(attrs['Meta'], 'document') and \
-           issubclass(attrs['Meta'].document, BaseDocument):
-            doc_fields = SortedDict()
 
-            formfield_generator = getattr(attrs['Meta'], 'formfield_generator', \
-                MongoFormFieldGenerator)()
-
-            widgets = getattr(attrs["Meta"], "widgets", {})
-
-            # walk through the document fields
-            for field_name, field in iter_valid_fields(attrs['Meta']):
-                # add field and override clean method to respect mongoengine-validator
-
-                # use to get a custom widget
-                if hasattr(field, 'get_custom_widget'):
-                    widget = field.get_custom_widget()
-                else:
-                    widget = widgets.get(field_name, None)
-
-                if widget:
-                    doc_fields[field_name] = formfield_generator.generate(
-                        field, widget=widget)
-                else:
-                    doc_fields[field_name] = formfield_generator.generate(
-                        field)
-
-                if not isinstance(field, FileField):
-                    doc_fields[field_name].clean = mongoengine_validate_wrapper(
-                        field,
-                        doc_fields[field_name].clean, field._validate)
-
-            # write the new document fields to base_fields
-            doc_fields.update(attrs['base_fields'])
-            attrs['base_fields'] = doc_fields
-
-        # maybe we need the Meta class later
-        attrs['_meta'] = attrs.get('Meta', object())
-
-        return super(MongoFormMetaClass, cls).__new__(cls, name, bases, attrs)
 
 class MongoForm(forms.BaseForm):
     """Base MongoForm class. Used to create new MongoForms"""
     __metaclass__ = MongoFormMetaClass
 
-    def __init__(self, data=None, files=None, auto_id='id_%s', prefix=None, initial=None,
-                 error_class=forms.util.ErrorList, label_suffix=':',
+    def __init__(self, data=None, files=None, auto_id='id_%s', prefix=None,
+                 initial=None, error_class=ErrorList, label_suffix=':',
                  empty_permitted=False, instance=None):
-        """ initialize the form"""
-
-        assert isinstance(instance, (types.NoneType, BaseDocument)), \
-            'instance must be a mongoengine document, not %s' % \
-                type(instance).__name__
-
-        assert hasattr(self, 'Meta'), 'Meta class is needed to use MongoForm'
-        # new instance or updating an existing one?
+        opts = self._meta
         if instance is None:
-            if self._meta.document is None:
-                raise ValueError('MongoForm has no document class specified.')
-            self.instance = self._meta.document()
+            if opts.document is None:
+                raise ValueError('MongjForm has no document class specified.')
+            # if we didn't get an instance, instantiate a new one
+            self.instance = opts.document()
             object_data = {}
             self.instance._adding = True
         else:
             self.instance = instance
             self.instance._adding = False
-            object_data = {}
-
-            # walk through the document fields
-            for field_name, field in iter_valid_fields(self._meta):
-                # add field data if needed
-                field_data = getattr(instance, field_name)
-                if isinstance(self._meta.document._fields[field_name], ReferenceField):
-                    # field data could be None for not populated refs
-                    field_data = field_data and str(field_data.id)
-                object_data[field_name] = field_data
-
-        # additional initial data available?
+            object_data = document_to_dict(instance, opts.fields, opts.exclude)
+        # if initial was provided, it should override the values from instance
         if initial is not None:
             object_data.update(initial)
 
-        self._validate_unique = False
-        super(MongoForm, self).__init__(data, files, auto_id, prefix, object_data, \
-            error_class, label_suffix, empty_permitted)
+        super(MongoForm, self).__init__(data, files, auto_id, prefix, object_data,
+                                        error_class, label_suffix, empty_permitted)
+
+    def _post_clean(self):
+        opts = self._meta
+        # Update the document instance with self.cleaned_data.
+        update_instance(self, self.instance, opts.fields, opts.exclude)
 
     def save(self, commit=True):
         """save the instance or create a new one.."""
-        # walk through the document fields
-        for field_name, field in iter_valid_fields(self._meta):
-            # FileFields need some more work to ensure the filename is unique
-            if isinstance(self.instance._fields[field_name], FileField):
-                io = self.cleaned_data.get(field_name)
-
-                if io is False:
-                    self.instance[field_name].delete()
-                elif isinstance(io, UploadedFile):
-                    save_file(self.instance[field_name], io)
-
-                continue
-
-            setattr(self.instance, field_name, self.cleaned_data.get(field_name))
-
-        if commit:
-            self.instance.save()
-
-        return self.instance
+        opts = self._meta
+        return save_instance(self, self.instance, opts.fields, opts.exclude, commit)
