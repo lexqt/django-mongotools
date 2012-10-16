@@ -3,6 +3,7 @@ import itertools
 import gridfs
 
 from django import forms
+from django.core.validators import EMPTY_VALUES
 from mongoengine.base import ValidationError
 from mongoengine.fields import EmbeddedDocumentField, ListField, ReferenceField
 
@@ -12,7 +13,7 @@ def generate_field(field):
     generator = MongoFormFieldGenerator()
     return generator.generate(field)
 
-def mongoengine_validate_wrapper(field, old_clean, new_clean):
+def mongoengine_validate_wrapper(field, old_clean, new_validate):
     """
     A wrapper function to validate formdata against mongoengine-field
     validator and raise a proper django.forms ValidationError if there
@@ -21,16 +22,18 @@ def mongoengine_validate_wrapper(field, old_clean, new_clean):
     def inner_validate(value, *args, **kwargs):
         value = old_clean(value, *args, **kwargs)
 
-        if value is None and field.required:
-            raise ValidationError("This field is required")
+        # see:
+        # django.forms.field.Field.validate
+        # mongoengine.base.BaseDocument.validate
+        if value not in EMPTY_VALUES:
+            try:
+                new_validate(value)
+            except ValidationError, e:
+                raise forms.ValidationError(e)
+        else:
+            value = None
 
-        elif value is None:
-            return value
-        try:
-            new_clean(value)
-            return value
-        except ValidationError, e:
-            raise forms.ValidationError(e)
+        return value
     return inner_validate
 
 def _get_unique_filename(fs, name):
