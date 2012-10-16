@@ -7,11 +7,11 @@ from django.forms.widgets import media_property
 from django.core.files.uploadedfile import UploadedFile
 from django.utils.datastructures import SortedDict
 from mongoengine.base import BaseDocument
-from mongotools.forms.fields import MongoFormFieldGenerator
+from mongotools.forms.fields import DocumentFormFieldGenerator
 from mongotools.forms.utils import mongoengine_validate_wrapper, save_file
 from mongoengine.fields import ReferenceField, FileField, ListField
 
-__all__ = ('MongoForm',)
+__all__ = ('DocumentForm',)
 
 
 
@@ -150,33 +150,34 @@ def fields_for_document(document, fields=None, exclude=None, widgets=None, formf
 
 
 
-class MongoFormOptions(object):
+class DocumentFormOptions(object):
     def __init__(self, options=None):
         self.document = getattr(options, 'document', None)
         self.fields = getattr(options, 'fields', None)
         self.exclude = getattr(options, 'exclude', None)
         self.widgets = getattr(options, 'widgets', None)
-        self.formfield_generator = getattr(options, 'formfield_generator', MongoFormFieldGenerator())
+        self.embedded_field = getattr(options, 'embedded_field_name', None)
+        self.formfield_generator = getattr(options, 'formfield_generator', DocumentFormFieldGenerator())
 
 
-class MongoFormMetaClass(type):
-    """Metaclass to create a new MongoForm."""
+class DocumentFormMetaClass(type):
+    """Metaclass to create a new DocumentForm."""
     # see django.forms.forms.ModelFormMetaclass
 
     def __new__(cls, name, bases, attrs):
         try:
-            parents = [b for b in bases if issubclass(b, MongoForm)]
+            parents = [b for b in bases if issubclass(b, DocumentForm)]
         except NameError:
-            # We are defining MongoForm itself.
+            # We are defining DocumentForm itself.
             parents = None
-        new_class = super(MongoFormMetaClass, cls).__new__(cls, name, bases,
+        new_class = super(DocumentFormMetaClass, cls).__new__(cls, name, bases,
                 attrs)
         if not parents:
             return new_class
 
         if 'media' not in attrs:
             new_class.media = media_property(new_class)
-        opts = new_class._meta = MongoFormOptions(getattr(new_class, 'Meta', None))
+        opts = new_class._meta = DocumentFormOptions(getattr(new_class, 'Meta', None))
         declared_fields = get_declared_fields(bases, attrs, False)
         if opts.document:
             # If a document is defined, extract form fields from it.
@@ -201,10 +202,7 @@ class MongoFormMetaClass(type):
         return new_class
 
 
-
-class MongoForm(forms.BaseForm):
-    """Base MongoForm class. Used to create new MongoForms"""
-    __metaclass__ = MongoFormMetaClass
+class BaseDocumentForm(forms.BaseForm):
 
     def __init__(self, data=None, files=None, auto_id='id_%s', prefix=None,
                  initial=None, error_class=ErrorList, label_suffix=':',
@@ -225,7 +223,7 @@ class MongoForm(forms.BaseForm):
         if initial is not None:
             object_data.update(initial)
 
-        super(MongoForm, self).__init__(data, files, auto_id, prefix, object_data,
+        super(BaseDocumentForm, self).__init__(data, files, auto_id, prefix, object_data,
                                         error_class, label_suffix, empty_permitted)
 
     def _post_clean(self):
@@ -237,3 +235,7 @@ class MongoForm(forms.BaseForm):
         """save the instance or create a new one.."""
         opts = self._meta
         return save_instance(self, self.instance, opts.fields, opts.exclude, commit)
+
+
+class DocumentForm(BaseDocumentForm):
+    __metaclass__ = DocumentFormMetaClass

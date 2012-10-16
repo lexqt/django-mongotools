@@ -148,13 +148,13 @@ class DocumentMultipleChoiceField(ReferenceField):
         return super(DocumentMultipleChoiceField, self).prepare_value(value)
 
 
-class MongoFormFieldGenerator(object):
+class DocumentFormFieldGenerator(object):
     """This is singleton class generates Django form-fields for mongoengine-fields."""
     
     _instance = None
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
-            cls._instance = super(MongoFormFieldGenerator, cls).__new__(
+            cls._instance = super(DocumentFormFieldGenerator, cls).__new__(
                 cls, *args, **kwargs)
         return cls._instance
 
@@ -172,7 +172,7 @@ class MongoFormFieldGenerator(object):
                     return getattr(self, 'generate_%s' % \
                                        cls.__name__.lower())(field, **kwargs)
 
-            raise NotImplementedError('%s is not supported by MongoForm' % \
+            raise NotImplementedError('%s is not supported by DocumentForm' % \
                                           field.__class__.__name__)
                 
     def get_field_choices(self, field, include_blank=True,

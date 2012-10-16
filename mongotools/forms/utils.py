@@ -1,16 +1,14 @@
 import os
 import itertools
-import gridfs
 
 from django import forms
 from django.core.validators import EMPTY_VALUES
 from mongoengine.base import ValidationError
-from mongoengine.fields import EmbeddedDocumentField, ListField, ReferenceField
 
-from fields import MongoFormFieldGenerator
+from fields import DocumentFormFieldGenerator
 
 def generate_field(field):
-    generator = MongoFormFieldGenerator()
+    generator = DocumentFormFieldGenerator()
     return generator.generate(field)
 
 def mongoengine_validate_wrapper(field, old_clean, new_validate):
