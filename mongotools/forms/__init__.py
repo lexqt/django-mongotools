@@ -9,7 +9,8 @@ from django.utils.datastructures import SortedDict
 from mongoengine.base import BaseDocument
 from mongotools.forms.fields import DocumentFormFieldGenerator
 from mongotools.forms.utils import mongoengine_validate_wrapper, save_file
-from mongoengine.fields import ReferenceField, FileField, ListField
+from mongoengine.fields import ReferenceField, EmbeddedDocumentField, \
+                               FileField, ListField
 
 __all__ = ('DocumentForm',)
 
@@ -166,7 +167,8 @@ class DocumentFormMetaClass(type):
 
     def __new__(cls, name, bases, attrs):
         try:
-            parents = [b for b in bases if issubclass(b, DocumentForm)]
+            parents = [b for b in bases if issubclass(b, DocumentForm) or
+                                           issubclass(b, EmbeddedDocumentForm)]
         except NameError:
             # We are defining DocumentForm itself.
             parents = None
@@ -239,3 +241,34 @@ class BaseDocumentForm(forms.BaseForm):
 
 class DocumentForm(BaseDocumentForm):
     __metaclass__ = DocumentFormMetaClass
+
+
+class EmbeddedDocumentForm(BaseDocumentForm):
+    __metaclass__ = DocumentFormMetaClass
+
+    def __init__(self, parent_document, *args, **kwargs):
+        super(EmbeddedDocumentForm, self).__init__(*args, **kwargs)
+        self.parent_document = parent_document
+        field_name = self._meta.embedded_field
+        if field_name is not None and \
+                not hasattr(self.parent_document, field_name):
+            raise FieldError("Parent document must have field %s" % field_name)
+        # TODO: list fields (append or save at index), dynamic document fields?
+        self.single_ref = isinstance(self.parent_document._fields[field_name],
+                                     EmbeddedDocumentField)
+
+    def save(self, commit=True):
+        if self.errors:
+            raise ValueError("The %s could not be saved because the data didn't"
+                         " validate." % self.instance.__class__.__name__)
+
+        val = None
+        if self.single_ref:
+            val = self.instance
+#        l = getattr(self.parent_document, self._meta.embedded_field)
+#        l.append(self.instance)
+        setattr(self.parent_document, self._meta.embedded_field, val)
+        if commit:
+            self.parent_document.save()
+
+        return self.instance
