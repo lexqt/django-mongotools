@@ -151,13 +151,6 @@ class DocumentMultipleChoiceField(ReferenceField):
 class DocumentFormFieldGenerator(object):
     """This is singleton class generates Django form-fields for mongoengine-fields."""
     
-    _instance = None
-    def __new__(cls, *args, **kwargs):
-        if not cls._instance:
-            cls._instance = super(DocumentFormFieldGenerator, cls).__new__(
-                cls, *args, **kwargs)
-        return cls._instance
-
     def generate(self, field, **kwargs):
         """Tries to lookup a matching formfield generator (lowercase 
         field-classname) and raises a NotImplementedError of no generator
@@ -177,6 +170,8 @@ class DocumentFormFieldGenerator(object):
                 
     def get_field_choices(self, field, include_blank=True,
                           blank_choice=BLANK_CHOICE_DASH):
+        # TODO: mongoengine supports flat list, Django do not
+        # should it be supported here?
         first_choice = include_blank and blank_choice or []
         return first_choice + list(field.choices)
 
@@ -198,7 +193,8 @@ class DocumentFormFieldGenerator(object):
     def get_field_label(self, field):
         if field.verbose_name:
             return field.verbose_name
-        return field.name.capitalize()
+        if field.name:
+            return field.name.capitalize()
 
     def get_field_help_text(self, field):
         if field.help_text:
@@ -385,7 +381,8 @@ class DocumentFormFieldGenerator(object):
             defaults.update(kwargs)
             f = DocumentMultipleChoiceField(field.field.document_type.objects, **defaults)
             return f
-        
+        raise NotImplementedError('Unsupported ListField configuration')
+
     def generate_filefield(self, field, **kwargs):
         defaults = {
             'required': field.required,
