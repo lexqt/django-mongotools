@@ -1,16 +1,18 @@
-from django import forms
-from pymongo.errors import InvalidId
 from bson import ObjectId
+from pymongo.errors import InvalidId
+
+from mongoengine.fields import (ReferenceField as MongoReferenceField,
+                                IntField, SequenceField)
+
+from django import forms
 from django.core.validators import EMPTY_VALUES
 from django.utils.encoding import smart_unicode, force_unicode
+from django.utils.text import capfirst
 from django.utils.translation import ugettext_lazy as _
 
-from mongoengine import ReferenceField as MongoReferenceField
+from mongotools.forms.widgets import ClearableGridFSFileInput
 
-from mongoengine.fields import (
-    IntField, SequenceField)
 
-from .widgets import ClearableGridFSFileInput
 
 BLANK_CHOICE_DASH = [("", "---------")]
 
@@ -192,13 +194,13 @@ class DocumentFormFieldGenerator(object):
 
     def get_field_label(self, field):
         if field.verbose_name:
-            return field.verbose_name
+            return capfirst(field.verbose_name)
         if field.name:
-            return field.name.capitalize()
+            return capfirst(field.name)
 
     def get_field_help_text(self, field):
         if field.help_text:
-            return field.help_text.capitalize()
+            return field.help_text
 
     def generate_stringfield(self, field, **kwargs):
         form_class = MongoCharField
@@ -219,7 +221,9 @@ class DocumentFormFieldGenerator(object):
             defaults['regex'] = field.regex
         elif field.choices:
             form_class = forms.TypedChoiceField
-            defaults['choices'] = self.get_field_choices(field)
+            include_blank = not field.required
+            defaults['choices'] = self.get_field_choices(field,
+                                                 include_blank=include_blank)
             defaults['coerce'] = self.string_field
 
             if not field.required:

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 
+from mongoengine.fields import GridFSProxy
+
 from django.forms.widgets import ClearableFileInput, CheckboxInput
 from django.utils.html import escape, conditional_escape
 from django.utils.encoding import force_unicode
 from django.utils.safestring import mark_safe
-
-from mongoengine.fields import GridFSProxy
 
 
 

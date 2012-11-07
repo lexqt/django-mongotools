@@ -1,18 +1,18 @@
-import types
-from django.core.exceptions import FieldError
+from mongoengine.fields import (ReferenceField, EmbeddedDocumentField,
+                                FileField)
+
+from django.core.exceptions import FieldError, ValidationError, NON_FIELD_ERRORS
 from django import forms
 from django.forms.forms import get_declared_fields
 from django.forms.util import ErrorList
 from django.forms.widgets import media_property
 from django.core.files.uploadedfile import UploadedFile
 from django.utils.datastructures import SortedDict
-from mongoengine.base import BaseDocument
+
 from mongotools.forms.fields import DocumentFormFieldGenerator
 from mongotools.forms.utils import mongoengine_validate_wrapper, save_file
-from mongoengine.fields import ReferenceField, EmbeddedDocumentField, \
-                               FileField, ListField
 
-__all__ = ('DocumentForm',)
+__all__ = ('DocumentForm', 'EmbeddedDocumentForm')
 
 
 
@@ -212,7 +212,7 @@ class BaseDocumentForm(forms.BaseForm):
         opts = self._meta
         if instance is None:
             if opts.document is None:
-                raise ValueError('MongjForm has no document class specified.')
+                raise ValueError('MongoForm has no document class specified.')
             # if we didn't get an instance, instantiate a new one
             self.instance = opts.document()
             object_data = {}
@@ -228,10 +228,29 @@ class BaseDocumentForm(forms.BaseForm):
         super(BaseDocumentForm, self).__init__(data, files, auto_id, prefix, object_data,
                                         error_class, label_suffix, empty_permitted)
 
+    def _update_errors(self, message_dict):
+        # see `django.forms.models.BaseModelForm._update_errors`
+        for k, v in message_dict.items():
+            if k != NON_FIELD_ERRORS:
+                self._errors.setdefault(k, self.error_class()).extend(v)
+                # Remove the data from the cleaned_data dict since it was invalid
+                if k in self.cleaned_data:
+                    del self.cleaned_data[k]
+        if NON_FIELD_ERRORS in message_dict:
+            messages = message_dict[NON_FIELD_ERRORS]
+            self._errors.setdefault(NON_FIELD_ERRORS, self.error_class()).extend(messages)
+
     def _post_clean(self):
         opts = self._meta
         # Update the document instance with self.cleaned_data.
         update_instance(self, self.instance, opts.fields, opts.exclude)
+
+        # Call the model instance's clean method.
+        if hasattr(self.instance, 'clean'):
+            try:
+                self.instance.clean()
+            except ValidationError, e:
+                self._update_errors({NON_FIELD_ERRORS: e.messages})
 
     def save(self, commit=True):
         """save the instance or create a new one.."""

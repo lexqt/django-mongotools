@@ -1,11 +1,14 @@
 import os
 import itertools
 
+from mongoengine import ValidationError
+
 from django import forms
 from django.core.validators import EMPTY_VALUES
-from mongoengine.base import ValidationError
 
-from fields import DocumentFormFieldGenerator
+from mongotools.forms.fields import DocumentFormFieldGenerator
+
+
 
 def generate_field(field):
     generator = DocumentFormFieldGenerator()
@@ -21,8 +24,8 @@ def mongoengine_validate_wrapper(field, old_clean, new_validate):
         value = old_clean(value, *args, **kwargs)
 
         # see:
-        # django.forms.field.Field.validate
-        # mongoengine.base.BaseDocument.validate
+        # `django.forms.field.Field.validate`
+        # `mongoengine.base.BaseDocument.validate`
         if value not in EMPTY_VALUES:
             try:
                 new_validate(value)
