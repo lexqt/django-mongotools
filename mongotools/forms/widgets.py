@@ -22,9 +22,8 @@ class ClearableGridFSFileInput(ClearableFileInput):
         substitutions['input'] = super(ClearableFileInput, self).render(name, value, attrs)
 
         if value and isinstance(value, GridFSProxy):
-            file = value.get()
             template = self.template_with_initial
-            substitutions['initial'] = escape(force_unicode(file.name))
+            substitutions['initial'] = self.get_proxy_initial(value)
             if not self.is_required:
                 checkbox_name = self.clear_checkbox_name(name)
                 checkbox_id = self.clear_checkbox_id(checkbox_name)
@@ -34,3 +33,7 @@ class ClearableGridFSFileInput(ClearableFileInput):
                 substitutions['clear_template'] = self.template_with_clear % substitutions
 
         return mark_safe(template % substitutions)
+
+    def get_proxy_initial(self, proxy):
+        file = proxy.get()
+        return escape(force_unicode(file.name))
