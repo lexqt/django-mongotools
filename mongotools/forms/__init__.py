@@ -1,7 +1,8 @@
+import mongoengine
 from mongoengine.fields import (ReferenceField, EmbeddedDocumentField,
                                 FileField)
 
-from django.core.exceptions import FieldError, ValidationError, NON_FIELD_ERRORS
+from django.core.exceptions import FieldError, NON_FIELD_ERRORS
 from django import forms
 from django.forms.forms import get_declared_fields
 from django.forms.util import ErrorList
@@ -246,11 +247,10 @@ class BaseDocumentForm(forms.BaseForm):
         update_instance(self, self.instance, opts.fields, opts.exclude)
 
         # Call the model instance's clean method.
-        if hasattr(self.instance, 'clean'):
-            try:
-                self.instance.clean()
-            except ValidationError, e:
-                self._update_errors({NON_FIELD_ERRORS: e.messages})
+        try:
+            self.instance.clean()
+        except mongoengine.ValidationError, e:
+            self._update_errors({NON_FIELD_ERRORS: [e.message]})
 
     def save(self, commit=True):
         """save the instance or create a new one.."""
