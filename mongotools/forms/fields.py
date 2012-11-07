@@ -17,6 +17,8 @@ from mongotools.forms.widgets import ClearableGridFSFileInput
 BLANK_CHOICE_DASH = [("", "---------")]
 
 class MongoChoiceIterator(object):
+    '''See `django.forms.models.ModelChoiceIterator`.'''
+
     def __init__(self, field):
         self.field = field
         self.queryset = field.queryset
@@ -24,9 +26,16 @@ class MongoChoiceIterator(object):
     def __iter__(self):
         if self.field.empty_label is not None:
             yield (u"", self.field.empty_label)
-        
-        for obj in self.queryset.all():
-            yield self.choice(obj)
+        if self.field.cache_choices:
+            if self.field.choice_cache is None:
+                self.field.choice_cache = [
+                    self.choice(obj) for obj in self.queryset.all()
+                ]
+            for choice in self.field.choice_cache:
+                yield choice
+        else:
+            for obj in self.queryset.all():
+                yield self.choice(obj)
 
     def __len__(self):
         return len(self.queryset)
@@ -41,32 +50,35 @@ class MongoCharField(forms.CharField):
             return None
         return smart_unicode(value)
 
-class ReferenceField(forms.TypedChoiceField):
+class ReferenceField(forms.ChoiceField):
     """
-    Reference field for mongo forms. Inspired by `django.forms.models.ModelChoiceField`.
+    Reference field for Mongo forms. Inspired by
+    `django.forms.models.ModelChoiceField`.
     """
-    def __init__(self, queryset, empty_label=u"---------",
-                 *args, **kwargs):
-        
-        super(ReferenceField, self).__init__(*args, **kwargs)
+
+    def __init__(self, queryset, empty_label=u"---------", cache_choices=False,
+                 required=True, initial=None, *args, **kwargs):
+        if required and (initial is not None):
+            self.empty_label = None
+        else:
+            self.empty_label = empty_label
+        self.cache_choices = cache_choices
+        self.coerce = kwargs.pop('coerce', ObjectId)
+
+        # Call Field instead of ChoiceField __init__() because we don't need
+        # ChoiceField.__init__().
+        super(forms.ChoiceField, self).__init__(required, initial=initial,
+                                                *args, **kwargs)
         self.queryset = queryset
-        self.empty_label = empty_label
-        
-    def _get_queryset(self):
-        return self._queryset
-        
-    def prepare_value(self, value):
-        if hasattr(value, '_meta'):
-            return value.pk
-        
-        return super(ReferenceField, self).prepare_value(value)
+        self.choice_cache = None
 
     def __deepcopy__(self, memo):
         result = super(forms.ChoiceField, self).__deepcopy__(memo)
-        result.queryset = result.queryset
-        result.empty_label = result.empty_label
+        result.queryset = result.queryset.clone()
         return result
 
+    def _get_queryset(self):
+        return self._queryset
 
     def _set_queryset(self, queryset):
         self._queryset = queryset
@@ -74,11 +86,6 @@ class ReferenceField(forms.TypedChoiceField):
 
     queryset = property(_get_queryset, _set_queryset)
 
-    def _get_choices(self):
-        return MongoChoiceIterator(self)
-
-    choices = property(_get_choices, forms.ChoiceField._set_choices)
-    
     def label_from_instance(self, obj):
         """
         This method is used to convert objects into strings; it's used to
@@ -87,20 +94,33 @@ class ReferenceField(forms.TypedChoiceField):
         """
         return smart_unicode(obj)
 
-    def clean(self, oid):
-        if oid in EMPTY_VALUES and not self.required:
+    def _get_choices(self):
+        return MongoChoiceIterator(self)
+
+    choices = property(_get_choices, forms.ChoiceField._set_choices)
+    
+    def prepare_value(self, value):
+        if hasattr(value, '_meta'):
+            return value.pk
+        return super(ReferenceField, self).prepare_value(value)
+
+    def clean(self, value):
+        if value in EMPTY_VALUES:
+            if self.required:
+                raise forms.ValidationError(self.error_messages['required'])
             return None
 
         try:
-            if self.coerce != int:
-                oid = ObjectId(oid)
-
-            oid = super(ReferenceField, self).clean(oid)
+            value = self.coerce(value)
+            value = super(ReferenceField, self).clean(value)
 
             queryset = self.queryset.clone()
-            obj = queryset.get(pk=oid)
-        except (TypeError, InvalidId, self.queryset._document.DoesNotExist):
-            raise forms.ValidationError(self.error_messages['invalid_choice'] % {'value': oid})
+            obj = queryset.get(pk=value)
+        except (ValueError, TypeError, InvalidId,
+                self.queryset._document.DoesNotExist):
+            raise forms.ValidationError(self.error_messages['invalid_choice'] %
+                                        {'value': value})
+        self.run_validators(value)
         return obj
 
 class DocumentMultipleChoiceField(ReferenceField):
@@ -139,7 +159,7 @@ class DocumentMultipleChoiceField(ReferenceField):
         for val in value:
             if force_unicode(val) not in pks:
                 raise forms.ValidationError(self.error_messages['invalid_choice'] % val)
-        # Since this overrides the inherited ModelChoiceField.clean
+        # Since this overrides the inherited ReferenceField.clean
         # we run custom validators here
         self.run_validators(value)
         return list(qs)
