@@ -246,11 +246,12 @@ class BaseDocumentForm(forms.BaseForm):
         # Update the document instance with self.cleaned_data.
         update_instance(self, self.instance, opts.fields, opts.exclude)
 
-        # Call the model instance's clean method.
-        try:
-            self.instance.clean()
-        except mongoengine.ValidationError, e:
-            self._update_errors({NON_FIELD_ERRORS: [e.message]})
+        if hasattr(self.instance, 'clean'):
+            # Call the model instance's clean method (mongoengine 0.8+)
+            try:
+                self.instance.clean()
+            except mongoengine.ValidationError, e:
+                self._update_errors({NON_FIELD_ERRORS: [e.message]})
 
     def save(self, commit=True):
         """save the instance or create a new one.."""
