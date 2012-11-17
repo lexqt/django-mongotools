@@ -427,3 +427,5 @@ class DocumentFormFieldGenerator(object):
         return forms.ImageField(**defaults)
 
 
+# common single instance
+default_generator = DocumentFormFieldGenerator()

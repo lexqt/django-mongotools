@@ -10,7 +10,7 @@ from django.forms.widgets import media_property
 from django.core.files.uploadedfile import UploadedFile
 from django.utils.datastructures import SortedDict
 
-from mongotools.forms.fields import DocumentFormFieldGenerator
+from mongotools.forms.fields import default_generator
 from mongotools.forms.utils import mongoengine_validate_wrapper, save_file
 
 __all__ = ('DocumentForm', 'EmbeddedDocumentForm')
@@ -114,7 +114,7 @@ def fields_for_document(document, fields=None, exclude=None, widgets=None, formf
     ignored = []
     if hasattr(document, '_meta'):
         id_field = document._meta.get('id_field')
-        if id_field not in fields:
+        if fields is None or id_field not in fields:
             if exclude:
                 exclude += (id_field,)
             else:
@@ -129,6 +129,9 @@ def fields_for_document(document, fields=None, exclude=None, widgets=None, formf
             kwargs = {'widget': widgets[field_name]}
         else:
             kwargs = {}
+
+        if formfield_generator is None:
+            formfield_generator = default_generator
 
         if not hasattr(formfield_generator, 'generate'):
             raise TypeError('formfield_generator must be an object with "generate" method')
@@ -164,7 +167,7 @@ class DocumentFormOptions(object):
         self.exclude = getattr(options, 'exclude', None)
         self.widgets = getattr(options, 'widgets', None)
         self.embedded_field = getattr(options, 'embedded_field_name', None)
-        self.formfield_generator = getattr(options, 'formfield_generator', DocumentFormFieldGenerator())
+        self.formfield_generator = getattr(options, 'formfield_generator', None)
 
 
 class DocumentFormMetaClass(type):
