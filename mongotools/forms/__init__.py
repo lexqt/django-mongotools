@@ -341,3 +341,46 @@ class EmbeddedDocumentForm(BaseDocumentForm):
             doc.save()
 
         return self.instance
+
+
+
+def documentform_factory(document, form=DocumentForm, fields=None, exclude=None,
+                  widgets=None, formfield_generator=None, embedded_field=None):
+    # see: `django.forms.models.modelform_factory`
+
+    # Create the inner Meta class.
+
+    # Build up a list of attributes that the Meta object will have.
+    attrs = {'document': document}
+    if fields is not None:
+        attrs['fields'] = fields
+    if exclude is not None:
+        attrs['exclude'] = exclude
+    if widgets is not None:
+        attrs['widgets'] = widgets
+    if formfield_generator is not None:
+        attrs['formfield_generator'] = formfield_generator
+    if embedded_field is not None:
+        attrs['embedded_field'] = embedded_field
+
+    # If parent form class already has an inner Meta, the Meta we're
+    # creating needs to inherit from the parent's inner meta.
+    parent = (object,)
+    if hasattr(form, 'Meta'):
+        parent = (form.Meta, object)
+    Meta = type('Meta', parent, attrs)
+
+    # Give this new form class a reasonable name.
+    class_name = document.__name__ + 'Form'
+
+    # Class attributes for the new form class.
+    form_class_attrs = {
+        'Meta': Meta,
+    }
+
+    form_metaclass = DocumentFormMetaClass
+
+    if issubclass(form, BaseDocumentForm) and hasattr(form, '__metaclass__'):
+        form_metaclass = form.__metaclass__
+
+    return form_metaclass(class_name, (form,), form_class_attrs)
