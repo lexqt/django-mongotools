@@ -1,6 +1,6 @@
 import mongoengine
 from mongoengine.fields import (ReferenceField, EmbeddedDocumentField,
-                                FileField)
+                                ListField, FileField)
 
 from django.core.exceptions import FieldError, NON_FIELD_ERRORS
 from django import forms
@@ -276,29 +276,65 @@ class DocumentForm(BaseDocumentForm):
 class EmbeddedDocumentForm(BaseDocumentForm):
     __metaclass__ = DocumentFormMetaClass
 
-    def __init__(self, parent_document, *args, **kwargs):
-        super(EmbeddedDocumentForm, self).__init__(*args, **kwargs)
+    def __init__(self, data=None, files=None, auto_id='id_%s', prefix=None,
+                 initial=None, error_class=ErrorList, label_suffix=':',
+                 empty_permitted=False, instance=None, parent_document=None):
+        super(EmbeddedDocumentForm, self).__init__(data, files, auto_id,
+           prefix, initial, error_class, label_suffix, empty_permitted, instance)
+        if (not parent_document and hasattr(self.instance, '_instance') and
+            self.instance._instance is not None):
+            parent_document = self.instance._instance
         self.parent_document = parent_document
+
+    def _get_parent_document(self):
+        return self._parent_document
+
+    def _set_parent_document(self, doc):
+        self._parent_document = doc
+        if not self._parent_document:
+            return
         field_name = self._meta.embedded_field
         if field_name is not None and \
-                not hasattr(self.parent_document, field_name):
+                not hasattr(self._parent_document, field_name):
             raise FieldError("Parent document must have field %s" % field_name)
-        # TODO: list fields (append or save at index), dynamic document fields?
-        self.single_ref = isinstance(self.parent_document._fields[field_name],
-                                     EmbeddedDocumentField)
+
+    parent_document = property(_get_parent_document, _set_parent_document)
 
     def save(self, commit=True):
+        doc_cls = self._meta.document.__name__
         if self.errors:
             raise ValueError("The %s could not be saved because the data didn't"
-                         " validate." % self.instance.__class__.__name__)
+                         " validate." % doc_cls)
+        if not self.parent_document:
+            raise ValueError("The %s could not be saved because the parent"
+                         " document is not assigned."
+                         % doc_cls)
 
-        val = None
-        if self.single_ref:
+        field_name = self._meta.embedded_field
+        if not field_name:
+            raise ValueError("The %s could not be saved because the parent"
+                         " document field is not defined."
+                         % doc_cls)
+
+        parent_field = self._parent_document._fields[field_name]
+        if isinstance(parent_field, EmbeddedDocumentField):
             val = self.instance
-#        l = getattr(self.parent_document, self._meta.embedded_field)
-#        l.append(self.instance)
-        setattr(self.parent_document, self._meta.embedded_field, val)
+            setattr(self.parent_document, self._meta.embedded_field, val)
+        elif isinstance(parent_field, ListField):
+            l = getattr(self.parent_document, self._meta.embedded_field)
+            l.append(self.instance)
+        else:
+            raise NotImplementedError("The %s could not be saved because the parent"
+                         " document field type %s is not supported."
+                         % (doc_cls, parent_field.__name__))
+
         if commit:
-            self.parent_document.save()
+            doc = self.parent_document
+            # try to reach parent `Document` instance if nested
+            # `EmbeddedDocument`s used
+            while (not hasattr(doc, 'save') and hasattr(doc, '_instance') and
+                   doc._instance is not None):
+                doc = doc._instance
+            doc.save()
 
         return self.instance
