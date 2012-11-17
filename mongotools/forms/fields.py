@@ -171,24 +171,21 @@ class DocumentMultipleChoiceField(ReferenceField):
 
 
 class DocumentFormFieldGenerator(object):
-    """This is singleton class generates Django form-fields for mongoengine-fields."""
+    """Class that generates Django form fields for MongoEngine fields."""
     
     def generate(self, field, **kwargs):
         """Tries to lookup a matching formfield generator (lowercase 
-        field-classname) and raises a NotImplementedError of no generator
+        field-classname) or raises a NotImplementedError if no generator
         can be found.
+        Formfield generator returns either Field instance or None if field
+        must be ignored (e.g. `AutoField` in Django).
         """
-        if hasattr(self, 'generate_%s' % field.__class__.__name__.lower()):
-            return getattr(self, 'generate_%s' % \
-                field.__class__.__name__.lower())(field, **kwargs)
-        else:
-            for cls in field.__class__.__bases__:
-                if hasattr(self, 'generate_%s' % cls.__name__.lower()):
-                    return getattr(self, 'generate_%s' % \
-                                       cls.__name__.lower())(field, **kwargs)
-
+        if not hasattr(self, 'generate_%s' % field.__class__.__name__.lower()):
             raise NotImplementedError('%s is not supported by DocumentForm' % \
                                           field.__class__.__name__)
+
+        return getattr(self, 'generate_%s' % \
+            field.__class__.__name__.lower())(field, **kwargs)
                 
     def get_field_choices(self, field, include_blank=True,
                           blank_choice=BLANK_CHOICE_DASH):

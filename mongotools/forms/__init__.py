@@ -98,7 +98,9 @@ def document_to_dict(instance, fields=None, exclude=None):
 
 def fields_for_document(document, fields=None, exclude=None, widgets=None, formfield_generator=None):
     """
-    Returns a ``SortedDict`` containing form fields for the given document.
+    Returns a `SortedDict` containing form fields for the given document.
+    Uses `None` for fields not supported by ``formfield_generator``.
+    Such fields should be filtered or replaced later.
 
     ``fields`` is an optional list of field names. If provided, only the named
     fields will be included in the returned fields.
@@ -130,16 +132,19 @@ def fields_for_document(document, fields=None, exclude=None, widgets=None, formf
 
         if not hasattr(formfield_generator, 'generate'):
             raise TypeError('formfield_generator must be an object with "generate" method')
-        else:
-            formfield = formfield_generator.generate(f, **kwargs)
 
-        if not isinstance(f, FileField):
+        try:
+            formfield = formfield_generator.generate(f, **kwargs)
+        except NotImplementedError:
+            formfield = False
+
+        if formfield and not isinstance(f, FileField):
             formfield.clean = mongoengine_validate_wrapper(
                 f,
                 formfield.clean, f._validate)
 
-        if formfield:
-            field_list.append((field_name, formfield))
+        if formfield is not None:
+            field_list.append((field_name, formfield or None))
         else:
             ignored.append(field_name)
     field_dict = SortedDict(field_list)
@@ -198,6 +203,11 @@ class DocumentFormMetaClass(type):
             # Override default document fields with any custom declared ones
             # (plus, include all the other declared fields).
             fields.update(declared_fields)
+            # filter fields not supported by ``formfield_generator`` and not
+            # replaced by ``declared_fields``
+            for n, f in fields.items():
+                if not f:
+                    del fields[n]
         else:
             fields = declared_fields
         new_class.declared_fields = declared_fields
@@ -213,7 +223,7 @@ class BaseDocumentForm(forms.BaseForm):
         opts = self._meta
         if instance is None:
             if opts.document is None:
-                raise ValueError('MongoForm has no document class specified.')
+                raise ValueError('DocumentForm has no document class specified.')
             # if we didn't get an instance, instantiate a new one
             self.instance = opts.document()
             object_data = {}
