@@ -166,7 +166,7 @@ class DocumentFormOptions(object):
         self.fields = getattr(options, 'fields', None)
         self.exclude = getattr(options, 'exclude', None)
         self.widgets = getattr(options, 'widgets', None)
-        self.embedded_field = getattr(options, 'embedded_field_name', None)
+        self.embedded_field = getattr(options, 'embedded_field', None)
         self.formfield_generator = getattr(options, 'formfield_generator', None)
 
 
@@ -304,7 +304,9 @@ class EmbeddedDocumentForm(BaseDocumentForm):
     parent_document = property(_get_parent_document, _set_parent_document)
 
     def save(self, commit=True):
-        doc_cls = self._meta.document.__name__
+        opts = self._meta
+        doc_cls = opts.document.__name__
+
         if self.errors:
             raise ValueError("The %s could not be saved because the data didn't"
                          " validate." % doc_cls)
@@ -313,7 +315,7 @@ class EmbeddedDocumentForm(BaseDocumentForm):
                          " document is not assigned."
                          % doc_cls)
 
-        field_name = self._meta.embedded_field
+        field_name = opts.embedded_field
         if not field_name:
             raise ValueError("The %s could not be saved because the parent"
                          " document field is not defined."
@@ -322,9 +324,9 @@ class EmbeddedDocumentForm(BaseDocumentForm):
         parent_field = self._parent_document._fields[field_name]
         if isinstance(parent_field, EmbeddedDocumentField):
             val = self.instance
-            setattr(self.parent_document, self._meta.embedded_field, val)
+            setattr(self.parent_document, opts.embedded_field, val)
         elif isinstance(parent_field, ListField):
-            l = getattr(self.parent_document, self._meta.embedded_field)
+            l = getattr(self.parent_document, opts.embedded_field)
             l.append(self.instance)
         else:
             raise NotImplementedError("The %s could not be saved because the parent"
