@@ -1,3 +1,5 @@
+from functools import wraps
+
 import mongoengine
 from mongoengine.fields import (ReferenceField, EmbeddedDocumentField,
                                 ListField, FileField)
@@ -7,11 +9,11 @@ from django import forms
 from django.forms.forms import get_declared_fields
 from django.forms.util import ErrorList
 from django.forms.widgets import media_property
-from django.core.files.uploadedfile import UploadedFile
 from django.utils.datastructures import SortedDict
 
 from mongotools.forms.fields import default_generator
-from mongotools.forms.utils import mongoengine_clean_wrapper, save_file
+from mongotools.forms.utils import (mongoengine_clean_wrapper, save_file,
+                                    save_file_field)
 
 __all__ = ('DocumentForm', 'EmbeddedDocumentForm')
 
@@ -35,9 +37,13 @@ def update_instance(form, instance, fields=None, exclude=None):
         if isinstance(f, FileField):
             file_field_list.append(f)
         else:
-            instance[field_name] = cleaned_data[field_name]
+            value = cleaned_data[field_name]
+            instance[field_name] = value
 
-    # TODO: should anything done with files before saving form?
+    if file_field_list:
+        instance._file_field_data = data = []
+        for f in file_field_list:
+            data.append((f.name, cleaned_data[f.name]))
 
     return instance
 
@@ -52,24 +58,53 @@ def save_instance(form, instance, fields=None, exclude=None, commit=True):
         raise ValueError("The `%s` could not be saved because the data didn't"
                          " validate." % (instance,))
 
-    for field_name, f in instance._fields.items():
-        if fields is not None and field_name not in fields:
-            continue
-        if exclude and field_name in exclude:
-            continue
-        if isinstance(f, FileField):
-            io = form.cleaned_data.get(field_name)
+    def process_file_field_data(doc):
+        if hasattr(doc, '_file_field_data'):
+            for name, val in doc._file_field_data:
+                save_file_field(val, doc, name)
 
-            # FIXME: should it be saved/deleted only if commit is True?
-            if io is False:
-                instance[field_name].delete()
-            elif isinstance(io, UploadedFile):
-                save_file(instance[field_name], io)
+    def save_files():
+        for field_name, f in instance._fields.items():
+            if fields is not None and field_name not in fields:
+                continue
+            if exclude and field_name in exclude:
+                continue
 
-            continue
+            # search for file data in `FileField`s
+            if isinstance(f, FileField):
+                value = form.cleaned_data.get(field_name)
+                save_file_field(value, instance, field_name)
+
+            # search for file data in embedded docs
+            # with ``_file_field_data`` prop created by forms (subforms)
+            elif isinstance(f, EmbeddedDocumentField):
+                doc = instance[field_name]
+                process_file_field_data(doc)
+            elif (isinstance(f, ListField) and
+                  isinstance(f.field, EmbeddedDocumentField)):
+                for doc in instance[field_name]:
+                    process_file_field_data(doc)
+
+    if not hasattr(instance, 'save'):
+        instance.save_files = save_files
+        return instance
 
     if commit:
+        save_files()
         instance.save()
+    else:
+        orig_save = instance.save
+        def save_files_once_wrapper(f):
+            @wraps(f)
+            def wrapper(*args, **kwds):
+                save_files()
+                instance.save = orig_save
+                return f(*args, **kwds)
+            return wrapper
+
+        # save files right before next ``instance.save`` call
+        instance.save = save_files_once_wrapper(orig_save)
+
     return instance
 
 def document_to_dict(instance, fields=None, exclude=None):
@@ -305,6 +340,7 @@ class EmbeddedDocumentForm(BaseDocumentForm):
     def save(self, commit=True):
         opts = self._meta
         doc_cls = opts.document.__name__
+        instance = self.instance
 
         if self.errors:
             raise ValueError("The %s could not be saved because the data didn't"
@@ -320,13 +356,15 @@ class EmbeddedDocumentForm(BaseDocumentForm):
                          " document field is not defined."
                          % doc_cls)
 
+        save_instance(self, instance, opts.fields, opts.exclude, commit=False)
+
         parent_field = self._parent_document._fields[field_name]
         if isinstance(parent_field, EmbeddedDocumentField):
-            val = self.instance
+            val = instance
             setattr(self.parent_document, opts.embedded_field, val)
         elif isinstance(parent_field, ListField):
             l = getattr(self.parent_document, opts.embedded_field)
-            l.append(self.instance)
+            l.append(instance)
         else:
             raise NotImplementedError("The %s could not be saved because the parent"
                          " document field type %s is not supported."
@@ -339,9 +377,12 @@ class EmbeddedDocumentForm(BaseDocumentForm):
             while (not hasattr(doc, 'save') and hasattr(doc, '_instance') and
                    doc._instance is not None):
                 doc = doc._instance
+
+            if hasattr(instance, 'save_files'):
+                instance.save_files()
             doc.save()
 
-        return self.instance
+        return instance
 
 
 

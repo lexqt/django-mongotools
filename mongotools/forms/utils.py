@@ -6,6 +6,7 @@ from mongoengine import ValidationError
 
 from django import forms
 from django.core.validators import EMPTY_VALUES
+from django.core.files.uploadedfile import UploadedFile
 
 from mongotools.forms.fields import DocumentFormFieldGenerator
 
@@ -53,3 +54,9 @@ def save_file(proxy, file):
     
     proxy.replace(file, content_type=file.content_type, filename=filename)
     return proxy
+
+def save_file_field(value, instance, field_name):
+    if value is False:
+        instance[field_name].delete()
+    elif isinstance(value, UploadedFile):
+        save_file(instance[field_name], value)
