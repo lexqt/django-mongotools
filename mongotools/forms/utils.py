@@ -1,5 +1,6 @@
 import os
 import itertools
+from functools import wraps
 
 from mongoengine import ValidationError
 
@@ -14,14 +15,15 @@ def generate_field(field):
     generator = DocumentFormFieldGenerator()
     return generator.generate(field)
 
-def mongoengine_validate_wrapper(field, old_clean, new_validate):
+def mongoengine_clean_wrapper(orig_clean, field, new_validate):
     """
     A wrapper function to validate formdata against mongoengine-field
     validator and raise a proper django.forms ValidationError if there
     are any problems.
     """
+    @wraps(orig_clean)
     def inner_validate(value, *args, **kwargs):
-        value = old_clean(value, *args, **kwargs)
+        value = orig_clean(value, *args, **kwargs)
 
         # see:
         # `django.forms.field.Field.validate`

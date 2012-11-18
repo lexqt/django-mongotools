@@ -11,7 +11,7 @@ from django.core.files.uploadedfile import UploadedFile
 from django.utils.datastructures import SortedDict
 
 from mongotools.forms.fields import default_generator
-from mongotools.forms.utils import mongoengine_validate_wrapper, save_file
+from mongotools.forms.utils import mongoengine_clean_wrapper, save_file
 
 __all__ = ('DocumentForm', 'EmbeddedDocumentForm')
 
@@ -142,9 +142,8 @@ def fields_for_document(document, fields=None, exclude=None, widgets=None, formf
             formfield = False
 
         if formfield and not isinstance(f, FileField):
-            formfield.clean = mongoengine_validate_wrapper(
-                f,
-                formfield.clean, f._validate)
+            formfield.clean = mongoengine_clean_wrapper(formfield.clean, f,
+                                                        f._validate)
 
         if formfield is not None:
             field_list.append((field_name, formfield or None))
