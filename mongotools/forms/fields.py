@@ -219,13 +219,18 @@ class DocumentFormFieldGenerator(object):
         if field.help_text:
             return field.help_text
 
+    def get_common_kwargs(self, field):
+        return {
+            'required': field.required,
+            'initial': field.default,
+            'label': self.get_field_label(field),
+            'help_text': self.get_field_help_text(field),
+            }
+
     def generate_stringfield(self, field, **kwargs):
         form_class = MongoCharField
 
-        defaults = {'label': self.get_field_label(field),
-                    'initial': field.default,
-                    'required': field.required,
-                    'help_text': self.get_field_help_text(field)}
+        defaults = self.get_common_kwargs(field)
 
         if field.max_length and not field.choices:
             defaults['max_length'] = field.max_length
@@ -250,126 +255,84 @@ class DocumentFormFieldGenerator(object):
         return form_class(**defaults)
 
     def generate_emailfield(self, field, **kwargs):
-        defaults = {
-            'required': field.required,
+        defaults = self.get_common_kwargs(field)
+        defaults.update({
             'min_length': field.min_length,
             'max_length': field.max_length,
-            'initial': field.default,
-            'label': self.get_field_label(field),
-            'help_text': self.get_field_help_text(field)    
-        }
-        
-        defaults.update(kwargs)
+        }, **kwargs)
+
         return forms.EmailField(**defaults)
 
     def generate_urlfield(self, field, **kwargs):
-        defaults = {
-            'required': field.required,
+        defaults = self.get_common_kwargs(field)
+        defaults.update({
             'min_length': field.min_length,
             'max_length': field.max_length,
-            'initial': field.default,
-            'label': self.get_field_label(field),
-            'help_text':  self.get_field_help_text(field)
-        }
-        
-        defaults.update(kwargs)
+        }, **kwargs)
+
         return forms.URLField(**defaults)
 
     def generate_intfield(self, field, **kwargs):
+        defaults = self.get_common_kwargs(field)
+
         if field.choices:
-            defaults = {
+            defaults.update({
                 'coerce': self.integer_field,
                 'empty_value': None,
-                'required': field.required,
-                'initial': field.default,
-                'label': self.get_field_label(field),
                 'choices': self.get_field_choices(field),
-                'help_text': self.get_field_help_text(field)        
-            }
-            
-            defaults.update(kwargs)
+            }, **kwargs)
+
             return forms.TypedChoiceField(**defaults)
         else:
-            defaults = {
-                'required': field.required,
+            defaults.update({
                 'min_value': field.min_value,
                 'max_value': field.max_value,
-                'initial': field.default,
-                'label': self.get_field_label(field),
-                'help_text': self.get_field_help_text(field)      
-            }
-            
-            defaults.update(kwargs)
+            }, **kwargs)
+
             return forms.IntegerField(**defaults)
 
     def generate_floatfield(self, field, **kwargs):
+        defaults = self.get_common_kwargs(field)
+        defaults.update({
+            'min_value': field.min_value,
+            'max_value': field.max_value,
+        }, **kwargs)
 
-        form_class = forms.FloatField
-
-        defaults = {'label': self.get_field_label(field),
-                    'initial': field.default,
-                    'required': field.required,
-                    'min_value': field.min_value,
-                    'max_value': field.max_value,
-                    'help_text': self.get_field_help_text(field)}
-
-        defaults.update(kwargs)
-        return form_class(**defaults)
+        return forms.FloatField(**defaults)
 
     def generate_decimalfield(self, field, **kwargs):
-        form_class = forms.DecimalField
-        defaults = {'label': self.get_field_label(field),
-                    'initial': field.default,
-                    'required': field.required,
-                    'min_value': field.min_value,
-                    'max_value': field.max_value,
-                    'help_text': self.get_field_help_text(field)}
+        defaults = self.get_common_kwargs(field)
+        defaults.update({
+            'min_value': field.min_value,
+            'max_value': field.max_value,
+        }, **kwargs)
 
-        defaults.update(kwargs)
-        return form_class(**defaults)
+        return forms.DecimalField(**defaults)
 
     def generate_booleanfield(self, field, **kwargs):
+        defaults = self.get_common_kwargs(field)
+
         if field.choices:
-            defaults = {
+            defaults.update({
                 'coerce': self.boolean_field,
                 'empty_value': None,
-                'required': field.required,
-                'initial': field.default,
-                'label': self.get_field_label(field),
                 'choices': self.get_field_choices(field),
-                'help_text': self.get_field_help_text(field)        
-            }
-            
-            defaults.update(kwargs)
+            }, **kwargs)
+
             return forms.TypedChoiceField(**defaults)
         else:
-            defaults = {
-                'required': field.required,
-                'initial': field.default,
-                'label': self.get_field_label(field),
-                'help_text': self.get_field_help_text(field)     
-                }
-            
             defaults.update(kwargs)
+
             return forms.BooleanField(**defaults)
 
     def generate_datetimefield(self, field, **kwargs):
-        defaults = {
-            'required': field.required,
-            'initial': field.default,
-            'label': self.get_field_label(field),
-        }
-        
+        defaults = self.get_common_kwargs(field)
         defaults.update(kwargs)
+
         return forms.DateTimeField(**defaults)
 
     def generate_referencefield(self, field, **kwargs):
-        defaults = {
-            'label': self.get_field_label(field),
-            'help_text': self.get_field_help_text(field),
-            'required': field.required
-        }
-        
+        defaults = self.get_common_kwargs(field)
         defaults.update(kwargs)
 
         id_field_name = field.document_type._meta['id_field']
@@ -381,49 +344,36 @@ class DocumentFormFieldGenerator(object):
         return ReferenceField(field.document_type.objects, **defaults)
 
     def generate_listfield(self, field, **kwargs):
+        defaults = self.get_common_kwargs(field)
         if field.field.choices:
-            defaults = {
+            defaults.update({
                 'choices': field.field.choices,
-                'required': field.required,
-                'label': self.get_field_label(field),
-                'help_text': self.get_field_help_text(field),
-                'widget': forms.CheckboxSelectMultiple     
-            }
-            
-            defaults.update(kwargs)
+                'widget': forms.CheckboxSelectMultiple,
+            }, **kwargs)
+
             return forms.MultipleChoiceField(**defaults)
         elif isinstance(field.field, MongoReferenceField):
-            defaults = {
-                'label': self.get_field_label(field),
-                'help_text': self.get_field_help_text(field),
-                'required': field.required
-            }
-        
             defaults.update(kwargs)
-            f = DocumentMultipleChoiceField(field.field.document_type.objects, **defaults)
-            return f
+
+            return DocumentMultipleChoiceField(
+                               field.field.document_type.objects, **defaults)
+
         raise NotImplementedError('Unsupported ListField configuration')
 
     def generate_filefield(self, field, **kwargs):
-        defaults = {
-            'required': field.required,
-            'label': self.get_field_label(field),
-            'initial': field.default,
-            'help_text': self.get_field_help_text(field),
+        defaults = self.get_common_kwargs(field)
+        defaults.update({
             'widget': ClearableGridFSFileInput,
-        }
-        defaults.update(kwargs)
+        }, **kwargs)
+
         return forms.FileField(**defaults)
 
     def generate_imagefield(self, field, **kwargs):
-        defaults = {
-            'required':field.required,
-            'label':self.get_field_label(field),
-            'initial': field.default,
-            'help_text': self.get_field_help_text(field),
+        defaults = self.get_common_kwargs(field)
+        defaults.update({
             'widget': ClearableGridFSFileInput,
-        }
-        defaults.update(kwargs)
+        }, **kwargs)
+
         return forms.ImageField(**defaults)
 
 
