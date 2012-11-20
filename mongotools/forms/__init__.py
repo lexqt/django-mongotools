@@ -327,6 +327,11 @@ class EmbeddedDocumentForm(BaseDocumentForm):
         return self._parent_document
 
     def _set_parent_document(self, doc):
+#        try:
+#            # test for weak ref
+#            bool(doc)
+#        except ReferenceError:
+#            doc = None
         self._parent_document = doc
         if not self._parent_document:
             return
