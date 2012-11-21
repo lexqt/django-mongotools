@@ -333,15 +333,17 @@ class DocumentFormFieldGenerator(object):
 
     def generate_referencefield(self, field, **kwargs):
         defaults = self.get_common_kwargs(field)
-        defaults.update(kwargs)
 
         id_field_name = field.document_type._meta['id_field']
         id_field = field.document_type._fields[id_field_name]
-
         if isinstance(id_field, (SequenceField, IntField)):
             defaults['coerce'] = int
 
-        return ReferenceField(field.document_type.objects, **defaults)
+        defaults.update({
+            'queryset': field.document_type.objects,
+        }, **kwargs)
+
+        return ReferenceField(**defaults)
 
     def generate_listfield(self, field, **kwargs):
         defaults = self.get_common_kwargs(field)
@@ -353,10 +355,11 @@ class DocumentFormFieldGenerator(object):
 
             return forms.MultipleChoiceField(**defaults)
         elif isinstance(field.field, MongoReferenceField):
-            defaults.update(kwargs)
+            defaults.update({
+                'queryset': field.field.document_type.objects,
+            }, **kwargs)
 
-            return DocumentMultipleChoiceField(
-                               field.field.document_type.objects, **defaults)
+            return DocumentMultipleChoiceField(**defaults)
 
         raise NotImplementedError('Unsupported ListField configuration')
 
