@@ -12,7 +12,7 @@ from django.forms.widgets import media_property
 from django.utils.datastructures import SortedDict
 
 from mongotools.forms.fields import default_generator
-from mongotools.forms.utils import (mongoengine_clean_wrapper, save_file,
+from mongotools.forms.utils import (wrap_formfield_clean, save_file,
                                     save_file_field)
 
 __all__ = ('DocumentForm', 'EmbeddedDocumentForm')
@@ -177,8 +177,7 @@ def fields_for_document(document, fields=None, exclude=None, widgets=None, formf
             formfield = False
 
         if formfield and not isinstance(f, FileField):
-            formfield.clean = mongoengine_clean_wrapper(formfield.clean, f,
-                                                        f._validate)
+            wrap_formfield_clean(formfield, f)
 
         if formfield is not None:
             field_list.append((field_name, formfield or None))

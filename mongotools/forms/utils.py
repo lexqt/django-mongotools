@@ -16,29 +16,38 @@ def generate_field(field):
     generator = DocumentFormFieldGenerator()
     return generator.generate(field)
 
-def mongoengine_clean_wrapper(orig_clean, field, new_validate):
+def wrap_formfield_clean(formfield, field):
     """
-    A wrapper function to validate formdata against mongoengine-field
-    validator and raise a proper django.forms ValidationError if there
-    are any problems.
+    Wraps ``formfield.clean`` method to validate form data against
+    MongoEngine field validator and reraise `django.forms.ValidationError`.
     """
+
+    orig_clean = formfield.__class__.clean
+
     @wraps(orig_clean)
-    def inner_validate(value, *args, **kwargs):
-        value = orig_clean(value, *args, **kwargs)
+    def do_clean(self, value, *args, **kwargs):
+        value = orig_clean(self, value, *args, **kwargs)
 
         # see:
         # `django.forms.field.Field.validate`
         # `mongoengine.base.BaseDocument.validate`
         if value not in EMPTY_VALUES:
             try:
-                new_validate(value)
+                field._validate(value)
             except ValidationError, e:
                 raise forms.ValidationError(e)
         else:
             value = None
-
         return value
-    return inner_validate
+
+    formfield.clean = do_clean.__get__(formfield, formfield.__class__)
+
+    orig_deepcopy = formfield.__deepcopy__
+    def new_deep_copy(memo):
+        result = orig_deepcopy(memo)
+        result.clean = do_clean.__get__(result, result.__class__)
+        return result
+    formfield.__deepcopy__ = new_deep_copy
 
 def _get_unique_filename(fs, name):
     file_root, file_ext = os.path.splitext(name)
