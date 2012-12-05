@@ -189,7 +189,11 @@ class MongoFormMixin(FormMixin, MongoSingleObjectMixin):
         return url
 
     def form_valid(self, form):
-        self.object = form.save()
+        instance = form.save()
+        if instance is None:
+            # see `BaseDocumentForm.save`
+            return super(MongoFormMixin, self).form_invalid(form)
+        self.object = instance
         return super(MongoFormMixin, self).form_valid(form)
 
     def get_context_data(self, **kwargs):

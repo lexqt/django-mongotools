@@ -374,7 +374,14 @@ class BaseDocumentForm(forms.BaseForm):
     def save(self, commit=True):
         """save the instance or create a new one.."""
         opts = self._meta
-        return save_instance(self, self.instance, opts.fields, opts.exclude, commit)
+        if not commit:
+            return save_instance(self, self.instance, opts.fields, opts.exclude, commit)
+        try:
+            doc = save_instance(self, self.instance, opts.fields, opts.exclude, commit)
+        except mongoengine.NotUniqueError, e:
+            self._update_errors({NON_FIELD_ERRORS: [e.message]})
+            return None
+        return doc
 
 
 class DocumentForm(BaseDocumentForm):
