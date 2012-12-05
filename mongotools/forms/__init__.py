@@ -5,6 +5,7 @@ from mongoengine.fields import (ReferenceField, EmbeddedDocumentField,
                                 ListField, FileField)
 
 from django.core.exceptions import FieldError, NON_FIELD_ERRORS
+from django.core.validators import EMPTY_VALUES
 from django import forms
 from django.forms.forms import get_declared_fields
 from django.forms.util import ErrorList
@@ -12,8 +13,7 @@ from django.forms.widgets import media_property
 from django.utils.datastructures import SortedDict
 
 from mongotools.forms.fields import default_generator
-from mongotools.forms.utils import (wrap_formfield_clean, save_file,
-                                    save_file_field)
+from mongotools.forms.utils import save_file, save_file_field
 
 __all__ = ('DocumentForm', 'EmbeddedDocumentForm')
 
@@ -98,7 +98,9 @@ def save_instance(form, instance, fields=None, exclude=None, commit=True,
 
     if commit:
         save_files()
-        instance.save()
+        # do not validate as it's already done in
+        # `BaseDocumentForm._post_clean`
+        instance.save(validate=False)
     else:
         orig_save = instance.save
         def save_files_once_wrapper(f):
@@ -183,8 +185,11 @@ def fields_for_document(document, fields=None, exclude=None, widgets=None, formf
         except NotImplementedError:
             formfield = False
 
-        if formfield and not isinstance(f, FileField):
-            wrap_formfield_clean(formfield, f)
+        # old way - use formfield wrapper
+        # new way - validate doc in `BaseDocumentForm._post_clean` and
+        # update error dict
+#        if formfield and not isinstance(f, FileField):
+#            wrap_formfield_clean(formfield, f)
 
         if formfield is not None:
             field_list.append((field_name, formfield or None))
@@ -294,13 +299,73 @@ class BaseDocumentForm(forms.BaseForm):
             messages = message_dict[NON_FIELD_ERRORS]
             self._errors.setdefault(NON_FIELD_ERRORS, self.error_class()).extend(messages)
 
+    def _get_validation_exclusions(self):
+        """
+        For backwards-compatibility, several types of fields need to be
+        excluded from model validation. See the following tickets for
+        details: #12507, #12521, #12553
+        """
+        exclude = []
+        # Build up a list of fields that should be excluded from model field
+        # validation and unique checks.
+        for field_name, f in self.instance._fields.items():
+            # Exclude fields that aren't on the form. The developer may be
+            # adding these values to the model after form validation.
+            if field_name not in self.fields:
+                exclude.append(field_name)
+
+            # Don't perform model validation on fields that were defined
+            # manually on the form and excluded via the ModelForm's Meta
+            # class. See #12901.
+            elif self._meta.fields and field_name not in self._meta.fields:
+                exclude.append(field_name)
+            elif self._meta.exclude and field_name in self._meta.exclude:
+                exclude.append(field_name)
+
+            # Exclude fields that failed form validation. There's no need for
+            # the model fields to validate them as well.
+            elif field_name in self._errors.keys():
+                exclude.append(field_name)
+
+            # Exclude empty fields that are not required by the form, if the
+            # underlying model field is required. This keeps the model field
+            # from raising a required error. Note: don't exclude the field from
+            # validation if the model field allows blanks. If it does, the blank
+            # value may be included in a unique check, so cannot be excluded
+            # from validation.
+            else:
+                form_field = self.fields[field_name]
+                field_value = self.cleaned_data.get(field_name, None)
+                if not form_field.required and field_value in EMPTY_VALUES:
+                    exclude.append(field_name)
+        return exclude
+
     def _post_clean(self):
         opts = self._meta
         # Update the document instance with self.cleaned_data.
-        update_instance(self, self.instance, opts.fields, opts.exclude)
+        self.instance = construct_instance(self, self.instance, opts.fields, opts.exclude)
 
-        if hasattr(self.instance, 'clean'):
-            # Call the model instance's clean method (mongoengine 0.8+)
+        # mongoengine 0.8+
+        is_clean_supported = hasattr(mongoengine.Document, 'clean')
+
+        # Validate the document instance's fields.
+        exclude = self._get_validation_exclusions()
+        validate_kwargs = {}
+        if is_clean_supported:
+            validate_kwargs['clean'] = False
+        try:
+            self.instance.validate(**validate_kwargs)
+        except mongoengine.ValidationError, e:
+            errors = e.errors
+            used_errors = {}
+            for field, err in errors.items():
+                if field in exclude:
+                    continue
+                used_errors[field] = [str(err)]
+            self._update_errors(used_errors)
+
+        # Call the document instance's clean method.
+        if is_clean_supported:
             try:
                 self.instance.clean()
             except mongoengine.ValidationError, e:
