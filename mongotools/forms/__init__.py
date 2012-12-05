@@ -19,9 +19,9 @@ __all__ = ('DocumentForm', 'EmbeddedDocumentForm')
 
 
 
-def update_instance(form, instance, fields=None, exclude=None):
+def construct_instance(form, instance, fields=None, exclude=None):
     """
-    Updates and returns a document instance from the bound
+    Constructs and returns a document instance from the bound
     ``form``'s ``cleaned_data``, but does not save the instance
     to the database.
     """
@@ -47,13 +47,20 @@ def update_instance(form, instance, fields=None, exclude=None):
 
     return instance
 
-def save_instance(form, instance, fields=None, exclude=None, commit=True):
+def save_instance(form, instance, fields=None, exclude=None, commit=True,
+                  construct=True):
     """
     Saves bound Form ``form``'s cleaned_data into document instance ``instance``.
 
     If commit=True, then the changes to ``instance`` will be saved to the
     database. Returns ``instance``.
+
+    If construct=False, assume ``instance`` has already been constructed and
+    just needs to be saved.
     """
+    if construct:
+        instance = construct_instance(form, instance, fields, exclude)
+
     if form.errors:
         raise ValueError("The `%s` could not be saved because the data didn't"
                          " validate." % (instance,))
@@ -360,7 +367,8 @@ class EmbeddedDocumentForm(BaseDocumentForm):
                          " document field is not defined."
                          % doc_cls)
 
-        save_instance(self, instance, opts.fields, opts.exclude, commit=False)
+        save_instance(self, instance, opts.fields, opts.exclude, commit=False,
+                      construct=False)
 
         parent_field = self._parent_document._fields[field_name]
         if isinstance(parent_field, EmbeddedDocumentField):
