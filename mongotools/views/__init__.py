@@ -173,7 +173,10 @@ class MongoFormMixin(FormMixin, MongoSingleObjectMixin):
         Returns the keyword arguments for instanciating the form.
         """
         kwargs = super(MongoFormMixin, self).get_form_kwargs()
-        kwargs.update({'instance': self.get_object()})
+        obj = self.object
+        if obj is not None:
+            obj = self.get_object()  # get copy for form processing
+        kwargs.update({'instance': obj})
         return kwargs
 
     def get_success_url(self):
