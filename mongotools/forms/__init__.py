@@ -38,6 +38,9 @@ def construct_instance(form, instance, fields=None, exclude=None):
             file_field_list.append(f)
         else:
             value = cleaned_data[field_name]
+            # force `None` value for empty values (mongoengine specific)
+            if value in EMPTY_VALUES:
+                value = None
             instance[field_name] = value
 
     if file_field_list:
